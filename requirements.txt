@@ -1,9 +1,5 @@
-Flask==2.2.2                  # Web framework
-Flask-SQLAlchemy==2.5.1       # ORM for database handling
-Flask-Migrate==4.0.0          # Database migrations
-Werkzeug==2.2.2               # Security and utility functions
-Jinja2==3.1.2                 # Templating engine
-itsdangerous==2.1.2           # Security features for Flask
-python-dotenv==1.0.0          # For environment variable management
-geopy==2.3.0                  # Geocoding and distance calculations
-gunicorn==20.1.0              # Production WSGI server
+Flask==2.2.2
+Flask-SQLAlchemy==2.5.1
+Flask-Migrate==3.1.0
+Werkzeug==2.2.2
+SQLAlchemy==1.4.39
