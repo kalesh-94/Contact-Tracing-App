@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, session, url_for
+from flask import Flask, render_template, request, redirect, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,9 +7,9 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///copydata.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///newdatabase.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.secret_key = "sqlite:///copydata.db"
+app.secret_key = "sqlite:///newdatabase.db"
 
 # Initialize database and migration
 db = SQLAlchemy(app)
@@ -42,32 +42,6 @@ class LoginActivity(db.Model):
 def home():
     return render_template('home.html')
 
-# User routes
-@app.route('/user/login', methods=['GET', 'POST'])
-def user_login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username, role='user').first()
-
-        if user and check_password_hash(user.password, password):
-            session['user_id'] = user.id
-            session['role'] = 'user'
-
-            # Capture the location on login (latitude and longitude)
-            latitude = request.form['latitude']  # assuming latitude is sent as form data
-            longitude = request.form['longitude']  # assuming longitude is sent as form data
-
-            # Store the login activity with location
-            login_activity = LoginActivity(user_id=user.id, latitude=latitude, longitude=longitude)
-            db.session.add(login_activity)
-            db.session.commit()
-
-            return redirect('/user/dashboard')
-        else:
-            return "Invalid username or password", 401
-
-    return render_template('login.html')
 
 @app.route('/user/signup', methods=['GET', 'POST'])
 def user_signup():
@@ -94,16 +68,44 @@ def user_signup():
 
     return render_template('signup.html')
 
+
+# User routes
+@app.route('/user/login', methods=['GET', 'POST'])
+def user_login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username, role='user').first()
+
+        if user and check_password_hash(user.password, password):
+            session['user_id'] = user.id
+            session['role'] = 'user'
+
+            # Capture the location on login (latitude and longitude)
+            latitude = request.form['latitude']
+            longitude = request.form['longitude']
+
+            # Store the login activity with location
+            login_activity = LoginActivity(user_id=user.id, latitude=latitude, longitude=longitude)
+            db.session.add(login_activity)
+            db.session.commit()
+
+            return redirect('/user/dashboard')
+        else:
+            return "Invalid username or password", 401
+
+    return render_template('login.html')
+
 @app.route('/user/dashboard')
 def user_dashboard():
     if 'user_id' in session and session.get('role') == 'user':
-        user_activities = LoginActivity.query.filter_by(user_id=session['user_id']).all()
+        user = User.query.get(session['user_id'])
+        if not user:
+            return redirect('/user/login')
 
-        # Debugging activity locations
-        for activity in user_activities:
-            print(f"Location of activity: {activity.latitude}, {activity.longitude}")
-
-        return render_template('user_dashboard.html', user_activities=user_activities)
+        user_activities = LoginActivity.query.filter_by(user_id=user.id).all()
+        return render_template('user_dashboard.html', user=user, user_activities=user_activities)
+    
     return redirect('/user/login')
 
 # Admin routes
@@ -123,93 +125,75 @@ def admin_login():
 
     return render_template('admin_login.html')
 
-@app.route('/admin/signup', methods=['GET', 'POST'])
-def admin_signup():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        if User.query.filter_by(username=username).first():
-            return "Admin username already exists!", 400
-
-        hashed_password = generate_password_hash(password)
-        new_admin = User(username=username, password=hashed_password, role='admin')
-
-        db.session.add(new_admin)
-        try:
-            db.session.commit()  # Commit to the database
-            print("Admin successfully added")  # Debug statement
-        except Exception as e:
-            db.session.rollback()  # In case of error, rollback the session
-            print(f"Error occurred: {e}")  # Print the error for debugging
-            return "An error occurred. Please try again.", 500
-
-        return redirect('/admin/login')
-
-    return render_template('admin_signup.html')
-
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if 'admin_id' in session and session.get('role') == 'admin':
         users = User.query.filter_by(role='user').all()
         activities = LoginActivity.query.order_by(LoginActivity.timestamp.desc()).all()
 
-        # Get all the locations
-        user_locations = []
-        for activity in activities:
-            user_locations.append({
-                'username': activity.user.username,  # Accessing the associated user
+        user_locations = [
+            {
+                'username': activity.user.username,
                 'latitude': activity.latitude,
                 'longitude': activity.longitude,
                 'is_infected': activity.user.is_infected
-            })
+            }
+            for activity in activities
+        ]
 
         return render_template('admin.html', users=users, user_locations=user_locations)
 
     return redirect('/admin/login')
 
-@app.route('/update_location/<user_id>', methods=['POST'])
-def update_location(user_id):
-    # Assuming latitude and longitude values are passed in the POST request
-    latitude = request.form['latitude']
-    longitude = request.form['longitude']
-
-    # Find the user
-    user = User.query.get(user_id)
-
-    if user:
-        # Find the latest activity for the user
-        user_activity = LoginActivity.query.filter_by(user_id=user.id).order_by(LoginActivity.timestamp.desc()).first()
-
-        if user_activity:
-            # Update the location
-            user_activity.latitude = latitude
-            user_activity.longitude = longitude
-            db.session.commit()
-            return "Location updated successfully", 200
-        else:
-            return "No activity found for the user", 404
-
-    return "User not found", 404
+# Predefine admin in the database
+def create_admin():
+    admin_username = "Admin1"
+    admin_password = "12345"
+    admin = User.query.filter_by(username=admin_username, role='admin').first()
+    if not admin:
+        # Use 'pbkdf2:sha256' instead of 'sha256'
+        hashed_password = generate_password_hash(admin_password, method='pbkdf2:sha256')
+        new_admin = User(username=admin_username, password=hashed_password, role='admin')
+        db.session.add(new_admin)
+        db.session.commit()
 
 @app.route('/update_status', methods=['POST'])
 def update_status():
-    if 'admin_id' not in session or session.get('role') != 'admin':
-        return "Unauthorized", 403
+    try:
+        # Parse the incoming JSON request
+        data = request.get_json()
+        user_id = data.get('user_id')
+        status = data.get('status')
 
-    data = request.json
-    user_id = data.get('user_id')
-    is_infected = data.get('is_infected')
+        # Fetch the user from the database
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
-    user = User.query.get(user_id)
-    if user:
-        user.is_infected = is_infected
+        # Update the user's status based on the 'status' field
+        if status == 'infected':
+            user.is_infected = True
+            user.is_suspiciously_infected = False
+        elif status == 'suspiciously infected':
+            user.is_infected = False
+            user.is_suspiciously_infected = True
+        elif status == 'uninfected':
+            user.is_infected = False
+            user.is_suspiciously_infected = False
+        else:
+            return jsonify({"error": "Invalid status"}), 400
+
+        # Commit the changes to the database
         db.session.commit()
-        return "Status updated", 200
 
-    return "User not found", 404
+        return jsonify({"success": True, "message": f"User status updated to {status}"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()  # Ensure location is initialized for first-time run
+        db.create_all()
+        create_admin()
     app.run(debug=True)
